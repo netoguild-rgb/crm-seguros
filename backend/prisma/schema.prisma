@@ -1,5 +1,3 @@
-// Copie e substitua no seu schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,12 +7,38 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- CONFIGURAÇÃO DO SISTEMA ---
 model SystemConfig {
   id              Int     @id @default(autoincrement())
+  
+  // Armazenamento
+  storageType     String  @default("LOCAL") // Opções: 'LOCAL' ou 'DRIVE'
   googleDriveJson Json?   
   googleFolderId  String? 
+
+  // E-mail (SMTP)
+  smtpHost        String?
+  smtpPort        Int?
+  smtpUser        String?
+  smtpPass        String?
+  smtpSecure      Boolean @default(true)
 }
 
+// --- GESTÃO DE DOCUMENTOS (NOVO) ---
+model Document {
+  id        Int      @id @default(autoincrement())
+  nome      String
+  categoria String   // Ex: Documentos Pessoais, Apólices, Vistorias
+  url       String   // Caminho local ou Link do Drive
+  tipo      String   // 'LOCAL' ou 'DRIVE'
+  path      String?  // Caminho físico (para anexo de email)
+  
+  clientId  Int
+  client    Client   @relation(fields: [clientId], references: [id])
+  criadoEm  DateTime @default(now())
+}
+
+// --- CLIENTES ---
 model Client {
   id               Int      @id @default(autoincrement())
   nome             String
@@ -25,24 +49,24 @@ model Client {
   cidade           String?
   estado           String?
   
-  // Veículo & Coberturas
+  // Veículo
   renavam            String?
   modelo_veiculo     String?
   ano_veiculo        String?
   condutor_principal String?
   km                 String?
+
+  // Coberturas
   guincho            String?
   carro_reserva      String?
   danos_terceiros    String? 
-  
-  // NOVO: Para saber se o cliente é "quente"
-  status           String   @default("ATIVO") // ATIVO, INATIVO
-  ultima_interacao DateTime @default(now())
 
   apolices         Policy[]
+  documentos       Document[] // Relação com documentos
   criadoEm         DateTime @default(now())
 }
 
+// --- APÓLICES ---
 model Policy {
   id             Int      @id @default(autoincrement())
   numero         String?
@@ -50,17 +74,15 @@ model Policy {
   tipo_seguro    String
   data_inicio    DateTime
   data_fim       DateTime
-  
-  // Financeiro
-  premio_liquido Float?   // Valor total do seguro
-  comissao       Float?   // Quanto você ganha
-  
+  premio_liquido Float?
+  comissao       Float?
   pdf_url        String?  
   pdf_file_id    String?  
   clientId       Int
   client         Client   @relation(fields: [clientId], references: [id])
 }
 
+// --- LEADS (TYPEBOT) ---
 model Lead {
   id              Int      @id @default(autoincrement())
   criadoEm        DateTime @default(now())
