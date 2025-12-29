@@ -5,17 +5,25 @@ import {
   LayoutDashboard, Users, FileText, Settings, Plus, Search, 
   Bot, AlertTriangle, Download, X, Folder, Mail, HardDrive, Upload, 
   AlertOctagon, Wrench, Activity, Camera, TrendingUp, Lock, LogOut, Car, CheckCircle,
-  Calendar as CalendarIcon, Clock, DollarSign, ChevronDown, UserPlus, Filter
+  Calendar as CalendarIcon, Clock, DollarSign, ChevronDown, UserPlus, Filter, PieChart,
+  ArrowUpRight, MoreHorizontal, Bell
 } from 'lucide-react';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, BarController } from 'chart.js';
-import { Doughnut, Bar } from 'react-chartjs-2';
+import { 
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, PointElement, LineElement 
+} from 'chart.js';
+import { Doughnut, Bar, Line } from 'react-chartjs-2';
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, BarController);
+// Registro completo do ChartJS para garantir gráficos ricos
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, PointElement, LineElement);
 
 const API_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:3000' 
   : 'https://crm-seguros.onrender.com';
 const api = axios.create({ baseURL: API_URL });
+
+// --- UTILS (DRY) ---
+const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+const formatDate = (date) => new Date(date).toLocaleDateString('pt-BR');
 
 const useAuth = () => {
     const [user, setUser] = useState(JSON.parse(localStorage.getItem('crm_user')));
@@ -43,7 +51,7 @@ const StatusBadge = ({ status }) => {
         'CONTATADO': 'bg-purple-100 text-purple-700 border-purple-200', 'VENDA': 'bg-emerald-100 text-emerald-700 border-emerald-200',
         'PERDIDO': 'bg-gray-100 text-gray-500 border-gray-200'
     };
-    return <span className={`px-2.5 py-0.5 rounded-md text-xs font-bold border ${styles[status] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>{status}</span>;
+    return <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider ${styles[status] || 'bg-gray-50 text-gray-500 border-gray-200'}`}>{status}</span>;
 };
 
 const Modal = ({ title, children, onClose, maxWidth = "max-w-md" }) => (
@@ -60,113 +68,151 @@ const Modal = ({ title, children, onClose, maxWidth = "max-w-md" }) => (
     </div>
 );
 
-// --- COMPONENTES PRINCIPAIS ---
+// --- DASHBOARD PROFISSIONAL (SALESFORCE STYLE) ---
+const Dashboard = () => { 
+    const [data, setData] = useState(null); 
+    const [loading, setLoading] = useState(true);
 
-const Clients = () => {
-  const [clients, setClients] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('DADOS'); // DADOS, PERFIL, ARQUIVOS
-  const [selectedClient, setSelectedClient] = useState(null);
-  const [clientDocs, setClientDocs] = useState([]);
-  const [form, setForm] = useState({});
-  const [docFile, setDocFile] = useState(null);
-  const [docForm, setDocForm] = useState({ nome: '', categoria: 'Geral' });
-  const [search, setSearch] = useState('');
+    useEffect(() => { 
+        const fetchData = async () => {
+            try {
+                const res = await api.get('/dashboard-stats');
+                setData(res.data);
+            } catch(e) { console.error(e); } finally { setLoading(false); }
+        };
+        fetchData(); 
+    }, []); 
 
-  useEffect(() => { loadClients(); }, []);
-  const loadClients = async () => { try { const res = await api.get('/clients'); setClients(res.data); } catch(e){} };
-  
-  const openClient = (client) => { setSelectedClient(client); setForm(client); setActiveTab('DADOS'); setModalOpen(true); loadDocs(client.id); };
-  const loadDocs = async (id) => { const r = await api.get(`/clients/${id}/documents`); setClientDocs(r.data); };
-  
-  const handleSaveClient = async (e) => { e.preventDefault(); if(selectedClient) await api.put(`/clients/${selectedClient.id}`, form); else await api.post('/clients', form); setModalOpen(false); loadClients(); };
-  
-  const handleUploadDoc = async (e) => { 
-      e.preventDefault(); 
-      if(!docFile) return alert("Selecione um arquivo"); 
-      const data = new FormData(); 
-      data.append('file', docFile); data.append('nome', docForm.nome || docFile.name); data.append('categoria', docForm.categoria); data.append('clientId', selectedClient.id); 
-      await api.post('/documents', data); 
-      alert("Arquivo salvo!"); setDocFile(null); setDocForm({nome:'', categoria:'Geral'}); loadDocs(selectedClient.id); 
-  };
-  
-  const handleSendEmail = async (docId) => { if(confirm("Enviar por e-mail?")) { try { await api.post(`/documents/${docId}/send-email`); alert("Enviado!"); } catch(e) { alert("Erro ao enviar"); } } };
+    if(loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div></div>;
 
-  const filteredClients = clients.filter(c => c.nome.toLowerCase().includes(search.toLowerCase()));
+    // Preparação dos dados para Gráficos (Processamento no Frontend para KISS no Backend)
+    const funnelData = {
+        labels: data?.charts?.leadsByStatus.map(s => s.status) || [],
+        datasets: [{
+            label: 'Leads por Etapa',
+            data: data?.charts?.leadsByStatus.map(s => s._count.status) || [],
+            backgroundColor: ['#3b82f6', '#a855f7', '#10b981', '#ef4444', '#cbd5e1'],
+            borderRadius: 6,
+        }]
+    };
 
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Users className="text-orange-500"/> Clientes</h2>
-          <div className="flex gap-2">
-              <input className="input-field w-64" placeholder="Buscar cliente..." value={search} onChange={e=>setSearch(e.target.value)}/>
-              <button onClick={() => {setForm({}); setSelectedClient(null); setActiveTab('DADOS'); setModalOpen(true);}} className="btn-primary"><Plus size={20}/> Novo</button>
-          </div>
-      </div>
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <table className="w-full text-left">
-              <thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider border-b"><tr><th className="p-5">Nome</th><th className="p-5">Veículo</th><th className="p-5 text-center">Ações</th></tr></thead>
-              <tbody className="divide-y divide-slate-50">{filteredClients.map(c => (<tr key={c.id} className="hover:bg-slate-50 transition-colors"><td className="p-5 font-bold text-slate-700">{c.nome}<div className="text-xs font-normal text-slate-400">{c.whatsapp}</div></td><td className="p-5 text-sm">{c.modelo_veiculo || '-'}</td><td className="p-5 text-center"><button onClick={() => openClient(c)} className="text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-lg text-xs font-bold transition-colors">Abrir Ficha</button></td></tr>))}</tbody>
-          </table>
-      </div>
-      
-      {modalOpen && (
-          <Modal title={selectedClient ? `Ficha: ${selectedClient.nome}` : "Novo Cliente"} onClose={()=>setModalOpen(false)} maxWidth="max-w-4xl">
-              <div className="flex gap-4 border-b mb-6 overflow-x-auto">
-                  {['DADOS', 'PERFIL', 'ARQUIVOS'].map(tab => (
-                      <button key={tab} onClick={()=>setActiveTab(tab)} className={`pb-2 text-sm font-bold transition-colors ${activeTab===tab?'text-orange-500 border-b-2 border-orange-500':'text-slate-400 hover:text-slate-600'}`}>{tab === 'ARQUIVOS' ? 'ARQUIVO DIGITAL (GED)' : tab}</button>
-                  ))}
-              </div>
+    // Agrupamento simples de receita por mês (Simulação visual baseada nos dados retornados)
+    const revenueLabels = data?.charts?.financialHistory.map(h => new Date(h.dueDate).toLocaleDateString('pt-BR', {month:'short'})) || [];
+    const revenueValues = data?.charts?.financialHistory.map(h => h.amount) || [];
+    
+    const revenueChartData = {
+        labels: revenueLabels.length ? revenueLabels : ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
+        datasets: [{
+            label: 'Receita Realizada (R$)',
+            data: revenueValues.length ? revenueValues : [0,0,0,0,0,0],
+            borderColor: '#f97316',
+            backgroundColor: 'rgba(249, 115, 22, 0.1)',
+            tension: 0.4,
+            fill: true
+        }]
+    };
 
-              {/* ABA DADOS */}
-              {activeTab === 'DADOS' && (
-                  <form onSubmit={handleSaveClient} className="space-y-4">
-                      <input className="input-field" placeholder="Nome Completo" value={form.nome||''} onChange={e=>setForm({...form, nome:e.target.value})} required/>
-                      <div className="grid grid-cols-2 gap-3"><input className="input-field" placeholder="Email" value={form.email||''} onChange={e=>setForm({...form, email:e.target.value})}/><input className="input-field" placeholder="WhatsApp" value={form.whatsapp||''} onChange={e=>setForm({...form, whatsapp:e.target.value})}/></div>
-                      <h4 className="text-xs font-bold text-slate-400 mt-4 uppercase">Dados do Veículo (Opcional)</h4>
-                      <div className="grid grid-cols-3 gap-3"><input className="input-field" placeholder="Modelo" value={form.modelo_veiculo||''} onChange={e=>setForm({...form, modelo_veiculo:e.target.value})}/><input className="input-field" placeholder="Placa" value={form.placa||''} onChange={e=>setForm({...form, placa:e.target.value})}/><input className="input-field" placeholder="Renavam" value={form.renavam||''} onChange={e=>setForm({...form, renavam:e.target.value})}/></div>
-                      <button className="btn-primary w-full mt-4">Salvar Alterações</button>
-                  </form>
-              )}
+    return (
+        <div className="space-y-6 animate-fade-in pb-10">
+            {/* Header */}
+            <div className="flex justify-between items-end">
+                <div>
+                    <h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2>
+                    <p className="text-sm text-slate-500">Bem-vindo ao seu painel de controle.</p>
+                </div>
+                <div className="text-sm text-slate-400 font-medium bg-white px-3 py-1 rounded-lg border border-slate-200">
+                    {new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </div>
+            </div>
 
-              {/* ABA PERFIL */}
-              {activeTab === 'PERFIL' && (
-                  <form onSubmit={handleSaveClient} className="space-y-4">
-                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">PREFERÊNCIAS & OBSERVAÇÕES</label><textarea className="input-field h-24" placeholder="Ex: Prefere contato por Zap, Aniversário..." value={form.obs_final||''} onChange={e=>setForm({...form, obs_final:e.target.value})}/></div>
-                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">QUESTIONÁRIO DE RISCO (JSON/TEXTO)</label><textarea className="input-field h-32 font-mono text-xs" placeholder='{"garagem": "Sim", "condutor_jovem": "Não"}' value={typeof form.questionnaires === 'object' ? JSON.stringify(form.questionnaires,null,2) : form.questionnaires} onChange={e=>setForm({...form, questionnaires:e.target.value})}/></div>
-                      <button className="btn-primary w-full mt-4">Salvar Perfil</button>
-                  </form>
-              )}
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
+                {[
+                    {t:'Clientes Ativos', v: data.kpi.totalClients, i:Users, c:'text-blue-600', bg:'bg-blue-50'},
+                    {t:'Apólices Vigentes', v: data.kpi.activePolicies, i:FileText, c:'text-emerald-600', bg:'bg-emerald-50'},
+                    {t:'Novos Leads', v: data.kpi.newLeads, i:Bot, c:'text-purple-600', bg:'bg-purple-50'},
+                    {t:'Receita Mês', v: formatCurrency(data.kpi.monthlyRevenue), i:DollarSign, c:'text-orange-600', bg:'bg-orange-50'}
+                ].map((x,i)=>(
+                    <div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all">
+                        <div>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{x.t}</p>
+                            <h3 className="text-2xl font-bold text-slate-800 mt-1">{x.v}</h3>
+                        </div>
+                        <div className={`p-3 rounded-xl ${x.bg} ${x.c}`}><x.i size={24}/></div>
+                    </div>
+                ))} 
+            </div>
 
-              {/* ABA ARQUIVOS (INTEGRADA) */}
-              {activeTab === 'ARQUIVOS' && selectedClient && (
-                  <div className="flex flex-col md:flex-row gap-6 h-96">
-                      <div className="md:w-1/3 md:border-r md:pr-4 space-y-4">
-                          <h4 className="font-bold text-xs uppercase text-slate-400">Novo Documento</h4>
-                          <form onSubmit={handleUploadDoc} className="space-y-3">
-                              <input className="input-field" placeholder="Nome do Arquivo" value={docForm.nome} onChange={e=>setDocForm({...docForm, nome:e.target.value})}/>
-                              <select className="input-field bg-white" value={docForm.categoria} onChange={e=>setDocForm({...docForm, categoria:e.target.value})}><option>Geral</option><option>Apólice</option><option>CNH/RG</option><option>Vistoria</option><option>Sinistro</option></select>
-                              <div className="border-2 border-dashed border-slate-200 p-4 rounded-xl text-center hover:bg-slate-50 cursor-pointer relative"><input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e=>setDocFile(e.target.files[0])}/><Upload className="mx-auto text-slate-300 mb-2"/><p className="text-xs text-slate-500 font-bold">{docFile ? docFile.name : "Selecionar Arquivo"}</p></div>
-                              <button className="btn-primary w-full text-sm">Enviar para Nuvem/Local</button>
-                          </form>
-                      </div>
-                      <div className="md:w-2/3 overflow-y-auto space-y-3 pr-2">
-                          <h4 className="font-bold text-xs uppercase text-slate-400">Arquivos Armazenados</h4>
-                          {clientDocs.map(doc=>(
-                              <div key={doc.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100 hover:shadow-sm transition">
-                                  <div className="flex items-center gap-3"><div className="bg-white p-2 rounded-lg border"><FileText size={16} className="text-orange-500"/></div><div><p className="font-bold text-sm text-slate-700">{doc.nome}</p><p className="text-[10px] text-slate-400 uppercase">{doc.categoria} • {new Date(doc.criadoEm).toLocaleDateString()}</p></div></div>
-                                  <div className="flex gap-2"><a href={doc.url} target="_blank" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Baixar"><Download size={16}/></a><button onClick={()=>handleSendEmail(doc.id)} className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition" title="Enviar Email"><Mail size={16}/></button></div>
-                              </div>
-                          ))}
-                          {clientDocs.length===0 && <div className="text-center text-slate-400 py-10">Nenhum documento encontrado.</div>}
-                      </div>
-                  </div>
-              )}
-          </Modal>
-      )}
-    </div>
-  );
+            {/* Gráficos Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Gráfico de Receita (Linha) - Maior destaque */}
+                <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-bold text-lg text-slate-800">Desempenho Financeiro</h3>
+                        <button className="text-xs text-blue-600 font-bold hover:underline">Ver Detalhes</button>
+                    </div>
+                    <div className="h-64 w-full">
+                        <Line data={revenueChartData} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { borderDash: [4, 4] } }, x: { grid: { display: false } } } }} />
+                    </div>
+                </div>
+
+                {/* Gráfico de Funil (Barra) */}
+                <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <h3 className="font-bold text-lg text-slate-800 mb-6">Funil de Leads</h3>
+                    <div className="h-64 w-full">
+                        <Bar data={funnelData} options={{ maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } }} />
+                    </div>
+                </div>
+            </div>
+
+            {/* Listas Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Próximos Compromissos */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><CalendarIcon size={18} className="text-orange-500"/> Agenda Próxima</h3>
+                        <Link to="/agenda" className="text-xs font-bold text-slate-400 hover:text-orange-500">Ver Todos</Link>
+                    </div>
+                    <div className="space-y-3">
+                        {data.lists.upcomingAgenda.map(app => (
+                            <div key={app.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-orange-50 transition-colors">
+                                <div className={`w-2 h-2 mt-2 rounded-full ${app.type==='REUNIAO'?'bg-blue-500':'bg-orange-500'}`}></div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-700">{app.title}</h4>
+                                    <p className="text-xs text-slate-500">{new Date(app.date).toLocaleString('pt-BR')} • {app.client?.nome || 'Sem cliente'}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {data.lists.upcomingAgenda.length === 0 && <p className="text-center text-sm text-slate-400 py-4">Sem compromissos próximos.</p>}
+                    </div>
+                </div>
+
+                {/* Leads Recentes */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Bot size={18} className="text-blue-500"/> Leads Recentes</h3>
+                        <Link to="/leads" className="text-xs font-bold text-slate-400 hover:text-blue-500">Gerenciar</Link>
+                    </div>
+                    <div className="space-y-0">
+                        {data.lists.recentLeads.map((lead, idx) => (
+                            <div key={lead.id} className={`flex justify-between items-center p-3 ${idx !== data.lists.recentLeads.length-1 ? 'border-b border-slate-50' : ''}`}>
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-700">{lead.nome}</h4>
+                                    <p className="text-xs text-slate-400">{lead.tipo_seguro || 'Geral'}</p>
+                                </div>
+                                <StatusBadge status={lead.status}/>
+                            </div>
+                        ))}
+                        {data.lists.recentLeads.length === 0 && <p className="text-center text-sm text-slate-400 py-4">Nenhum lead novo.</p>}
+                    </div>
+                </div>
+            </div>
+        </div> 
+    );
 };
+
+// --- MÓDULOS DE GESTÃO (LEADS, CLIENTES, AGENDA, ETC) ---
+// Mantidos exatamente como a versão anterior, mas garantindo que estão aqui para integridade do código.
 
 const Leads = () => {
     const [leads, setLeads] = useState([]);
@@ -355,7 +401,108 @@ const Finance = () => {
     );
 };
 
-// --- MÓDULOS ANTIGOS (COM NOVO DESIGN) ---
+const Clients = () => {
+  const [clients, setClients] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('DADOS'); 
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [clientDocs, setClientDocs] = useState([]);
+  const [form, setForm] = useState({});
+  const [docFile, setDocFile] = useState(null);
+  const [docForm, setDocForm] = useState({ nome: '', categoria: 'Geral' });
+  const [search, setSearch] = useState('');
+
+  useEffect(() => { loadClients(); }, []);
+  const loadClients = async () => { try { const res = await api.get('/clients'); setClients(res.data); } catch(e){} };
+  
+  const openClient = (client) => { setSelectedClient(client); setForm(client); setActiveTab('DADOS'); setModalOpen(true); loadDocs(client.id); };
+  const loadDocs = async (id) => { const r = await api.get(`/clients/${id}/documents`); setClientDocs(r.data); };
+  
+  const handleSaveClient = async (e) => { e.preventDefault(); if(selectedClient) await api.put(`/clients/${selectedClient.id}`, form); else await api.post('/clients', form); setModalOpen(false); loadClients(); };
+  
+  const handleUploadDoc = async (e) => { 
+      e.preventDefault(); 
+      if(!docFile) return alert("Selecione um arquivo"); 
+      const data = new FormData(); 
+      data.append('file', docFile); data.append('nome', docForm.nome || docFile.name); data.append('categoria', docForm.categoria); data.append('clientId', selectedClient.id); 
+      await api.post('/documents', data); 
+      alert("Arquivo salvo!"); setDocFile(null); setDocForm({nome:'', categoria:'Geral'}); loadDocs(selectedClient.id); 
+  };
+  
+  const handleSendEmail = async (docId) => { if(confirm("Enviar por e-mail?")) { try { await api.post(`/documents/${docId}/send-email`); alert("Enviado!"); } catch(e) { alert("Erro ao enviar"); } } };
+
+  const filteredClients = clients.filter(c => c.nome.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Users className="text-orange-500"/> Clientes</h2>
+          <div className="flex gap-2">
+              <input className="input-field w-64" placeholder="Buscar cliente..." value={search} onChange={e=>setSearch(e.target.value)}/>
+              <button onClick={() => {setForm({}); setSelectedClient(null); setActiveTab('DADOS'); setModalOpen(true);}} className="btn-primary"><Plus size={20}/> Novo</button>
+          </div>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <table className="w-full text-left">
+              <thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider border-b"><tr><th className="p-5">Nome</th><th className="p-5">Veículo</th><th className="p-5 text-center">Ações</th></tr></thead>
+              <tbody className="divide-y divide-slate-50">{filteredClients.map(c => (<tr key={c.id} className="hover:bg-slate-50 transition-colors"><td className="p-5 font-bold text-slate-700">{c.nome}<div className="text-xs font-normal text-slate-400">{c.whatsapp}</div></td><td className="p-5 text-sm">{c.modelo_veiculo || '-'}</td><td className="p-5 text-center"><button onClick={() => openClient(c)} className="text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-lg text-xs font-bold transition-colors">Abrir Ficha</button></td></tr>))}</tbody>
+          </table>
+      </div>
+      
+      {modalOpen && (
+          <Modal title={selectedClient ? `Ficha: ${selectedClient.nome}` : "Novo Cliente"} onClose={()=>setModalOpen(false)} maxWidth="max-w-4xl">
+              <div className="flex gap-4 border-b mb-6 overflow-x-auto">
+                  {['DADOS', 'PERFIL', 'ARQUIVOS'].map(tab => (
+                      <button key={tab} onClick={()=>setActiveTab(tab)} className={`pb-2 text-sm font-bold transition-colors ${activeTab===tab?'text-orange-500 border-b-2 border-orange-500':'text-slate-400 hover:text-slate-600'}`}>{tab === 'ARQUIVOS' ? 'ARQUIVO DIGITAL (GED)' : tab}</button>
+                  ))}
+              </div>
+
+              {activeTab === 'DADOS' && (
+                  <form onSubmit={handleSaveClient} className="space-y-4">
+                      <input className="input-field" placeholder="Nome Completo" value={form.nome||''} onChange={e=>setForm({...form, nome:e.target.value})} required/>
+                      <div className="grid grid-cols-2 gap-3"><input className="input-field" placeholder="Email" value={form.email||''} onChange={e=>setForm({...form, email:e.target.value})}/><input className="input-field" placeholder="WhatsApp" value={form.whatsapp||''} onChange={e=>setForm({...form, whatsapp:e.target.value})}/></div>
+                      <h4 className="text-xs font-bold text-slate-400 mt-4 uppercase">Dados do Veículo (Opcional)</h4>
+                      <div className="grid grid-cols-3 gap-3"><input className="input-field" placeholder="Modelo" value={form.modelo_veiculo||''} onChange={e=>setForm({...form, modelo_veiculo:e.target.value})}/><input className="input-field" placeholder="Placa" value={form.placa||''} onChange={e=>setForm({...form, placa:e.target.value})}/><input className="input-field" placeholder="Renavam" value={form.renavam||''} onChange={e=>setForm({...form, renavam:e.target.value})}/></div>
+                      <button className="btn-primary w-full mt-4">Salvar Alterações</button>
+                  </form>
+              )}
+
+              {activeTab === 'PERFIL' && (
+                  <form onSubmit={handleSaveClient} className="space-y-4">
+                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">PREFERÊNCIAS & OBSERVAÇÕES</label><textarea className="input-field h-24" placeholder="Ex: Prefere contato por Zap, Aniversário..." value={form.obs_final||''} onChange={e=>setForm({...form, obs_final:e.target.value})}/></div>
+                      <div className="space-y-2"><label className="text-xs font-bold text-slate-500">QUESTIONÁRIO DE RISCO (JSON/TEXTO)</label><textarea className="input-field h-32 font-mono text-xs" placeholder='{"garagem": "Sim", "condutor_jovem": "Não"}' value={typeof form.questionnaires === 'object' ? JSON.stringify(form.questionnaires,null,2) : form.questionnaires} onChange={e=>setForm({...form, questionnaires:e.target.value})}/></div>
+                      <button className="btn-primary w-full mt-4">Salvar Perfil</button>
+                  </form>
+              )}
+
+              {activeTab === 'ARQUIVOS' && selectedClient && (
+                  <div className="flex flex-col md:flex-row gap-6 h-96">
+                      <div className="md:w-1/3 md:border-r md:pr-4 space-y-4">
+                          <h4 className="font-bold text-xs uppercase text-slate-400">Novo Documento</h4>
+                          <form onSubmit={handleUploadDoc} className="space-y-3">
+                              <input className="input-field" placeholder="Nome do Arquivo" value={docForm.nome} onChange={e=>setDocForm({...docForm, nome:e.target.value})}/>
+                              <select className="input-field bg-white" value={docForm.categoria} onChange={e=>setDocForm({...docForm, categoria:e.target.value})}><option>Geral</option><option>Apólice</option><option>CNH/RG</option><option>Vistoria</option><option>Sinistro</option></select>
+                              <div className="border-2 border-dashed border-slate-200 p-4 rounded-xl text-center hover:bg-slate-50 cursor-pointer relative"><input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e=>setDocFile(e.target.files[0])}/><Upload className="mx-auto text-slate-300 mb-2"/><p className="text-xs text-slate-500 font-bold">{docFile ? docFile.name : "Selecionar Arquivo"}</p></div>
+                              <button className="btn-primary w-full text-sm">Enviar para Nuvem/Local</button>
+                          </form>
+                      </div>
+                      <div className="md:w-2/3 overflow-y-auto space-y-3 pr-2">
+                          <h4 className="font-bold text-xs uppercase text-slate-400">Arquivos Armazenados</h4>
+                          {clientDocs.map(doc=>(
+                              <div key={doc.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100 hover:shadow-sm transition">
+                                  <div className="flex items-center gap-3"><div className="bg-white p-2 rounded-lg border"><FileText size={16} className="text-orange-500"/></div><div><p className="font-bold text-sm text-slate-700">{doc.nome}</p><p className="text-[10px] text-slate-400 uppercase">{doc.categoria} • {new Date(doc.criadoEm).toLocaleDateString()}</p></div></div>
+                                  <div className="flex gap-2"><a href={doc.url} target="_blank" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Baixar"><Download size={16}/></a><button onClick={()=>handleSendEmail(doc.id)} className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition" title="Enviar Email"><Mail size={16}/></button></div>
+                              </div>
+                          ))}
+                          {clientDocs.length===0 && <div className="text-center text-slate-400 py-10">Nenhum documento encontrado.</div>}
+                      </div>
+                  </div>
+              )}
+          </Modal>
+      )}
+    </div>
+  );
+};
 
 const Policies = ({ user }) => {
     const [policies, setPolicies] = useState([]);
@@ -463,24 +610,6 @@ const Login = ({ onLogin }) => {
     const [form, setForm] = useState({ nome: '', email: '', senha: '', perfil: 'PRODUTOR' });
     const handleSubmit = async (e) => { e.preventDefault(); try { if (isRegister) { await api.post('/users', form); alert("Cadastrado!"); setIsRegister(false); } else { const res = await api.post('/login', { email: form.email, senha: form.senha }); onLogin(res.data); } } catch (err) { alert("Erro login"); } };
     return ( <div className="flex h-screen bg-slate-900 items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md shadow-2xl text-center"><div className="mb-8"><h1 className="text-4xl font-extrabold text-slate-800">CRM</h1><span className="text-xs font-bold text-orange-500 tracking-[0.3em] uppercase">CG Seguros</span></div><form onSubmit={handleSubmit} className="space-y-4">{isRegister && <input className="input-field" placeholder="Nome" onChange={e=>setForm({...form, nome:e.target.value})}/>}<input className="input-field" placeholder="Email" onChange={e=>setForm({...form, email:e.target.value})}/><input className="input-field" type="password" placeholder="Senha" onChange={e=>setForm({...form, senha:e.target.value})}/><button className="btn-primary w-full">{isRegister ? "Cadastrar" : "Entrar"}</button></form><button onClick={()=>setIsRegister(!isRegister)} className="mt-4 text-sm text-blue-600 hover:underline">{isRegister ? "Já tenho conta" : "Criar conta"}</button></div></div> );
-};
-
-const Dashboard = () => { 
-    const [s, setS] = useState({}); 
-    useEffect(() => { api.get('/dashboard-stats').then(r => setS(r.data)); }, []); 
-    return (
-        <div className="space-y-6 animate-fade-in">
-            <h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-                {[{t:'Clientes',v:s.totalClients||0,i:Users,c:'text-blue-600'},{t:'Apólices',v:s.activePolicies||0,i:FileText,c:'text-green-600'},{t:'Novos Leads',v:s.newLeads||0,i:Bot,c:'text-purple-600'},{t:'Renovações',v:s.expiring||0,i:AlertTriangle,c:'text-red-600'}].map((x,i)=>(
-                    <div key={i} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-start hover:shadow-md transition-shadow">
-                        <div><h3 className="text-3xl font-bold text-slate-800">{x.v}</h3><p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">{x.t}</p></div>
-                        <div className={`p-3 rounded-xl bg-gray-50 ${x.c}`}><x.i size={24}/></div>
-                    </div>
-                ))} 
-            </div>
-        </div> 
-    );
 };
 
 // --- LAYOUT ---
