@@ -34,7 +34,7 @@ model User {
   criadoEm     DateTime      @default(now())
 }
 
-// --- CLIENTES (ATUALIZADO COM NOVOS CAMPOS) ---
+// --- CLIENTES ---
 model Client {
   id               Int      @id @default(autoincrement())
   nome             String
@@ -45,81 +45,56 @@ model Client {
   cidade           String?
   estado           String?
   
-  // AUTO
+  // Auto
   renavam            String?
-  placa              String? // Novo
+  placa              String?
   modelo_veiculo     String?
   ano_veiculo        String?
-  uso_veiculo        String? // Novo
+  uso_veiculo        String?
   condutor_principal String?
-  idade_condutor     String? // Novo
+  idade_condutor     String?
   km                 String?
-  
-  // AUTO - Coberturas
-  guincho            String? // km_guincho
+  guincho            String?
   carro_reserva      String?
-  danos_terceiros    String? // cobertura_terceiros
-  cobertura_roubo    String? // Novo
+  danos_terceiros    String? 
+  cobertura_roubo    String?
 
-  // VIDA (Novos)
+  // Vida/Saude
   capital_vida       String?
   profissao          String?
   motivo_vida        String?
-
-  // SAÚDE (Novos)
   preferencia_rede   String?
   idades_saude       String?
   plano_saude        String?
 
-  // GERAL
-  obs_final          String?  // Anotações vindas do bot
+  // Geral
+  obs_final          String?
   preferences        Json?    
   questionnaires     Json?    
 
   apolices         Policy[]
-  documentos       Document[]
+  documentos       Document[] // Area de arquivos do cliente
   claims           Claim[]
   appointments     Appointment[]
   criadoEm         DateTime @default(now())
 }
 
-// --- LEADS (INTEGRAÇÃO TYPEBOT) ---
-model Lead {
-  id              Int      @id @default(autoincrement())
-  criadoEm        DateTime @default(now())
-  
-  // Status do Funil
-  status          String   @default("NOVO") // NOVO, CONTATADO, COTACAO, VENDA, PERDIDO
-  
-  // Dados de Contato
-  nome            String
-  whatsapp        String
-  tipo_seguro     String?  // Auto, Vida, Saude
-  
-  // Variáveis Específicas do Typebot
-  obs_final          String?
-  capital_vida       String?
-  profissao          String?
-  motivo_vida        String?
-  preferencia_rede   String?
-  idades_saude       String?
-  plano_saude        String?
-  cobertura_roubo    String?
-  cobertura_terceiros String?
-  carro_reserva      String?
-  km_guincho         String?
-  renavan            String?
-  placa              String?
-  ano_do_veiculo     String? // Mapeado para ano_veiculo no Client
-  modelo_veiculo     String?
-  uso_veiculo        String?
-  idade_do_condutor  String? // Mapeado para idade_condutor no Client
-  condutor_principal String?
-  
-  dados_extras    Json? // Para guardar qualquer outra coisa que sobrar
+// --- DOCUMENTOS (ARQUIVO DIGITAL) ---
+model Document {
+  id        Int      @id @default(autoincrement())
+  nome      String
+  categoria String   
+  url       String   
+  tipo      String   // LOCAL ou DRIVE
+  path      String?  
+  clientId  Int
+  client    Client   @relation(fields: [clientId], references: [id])
+  claimId   Int?
+  claim     Claim?   @relation(fields: [claimId], references: [id])
+  criadoEm  DateTime @default(now())
 }
 
-// --- AGENDA ---
+// --- OUTRAS TABELAS (MANTIDAS) ---
 model Appointment {
   id          Int      @id @default(autoincrement())
   title       String
@@ -134,7 +109,6 @@ model Appointment {
   createdAt   DateTime @default(now())
 }
 
-// --- FINANCEIRO ---
 model FinancialRecord {
   id          Int      @id @default(autoincrement())
   type        String   
@@ -147,7 +121,6 @@ model FinancialRecord {
   createdAt   DateTime @default(now())
 }
 
-// --- APÓLICES, DOCUMENTOS, SINISTROS (MANTIDOS) ---
 model Policy {
   id             Int      @id @default(autoincrement())
   numero         String?
@@ -164,20 +137,6 @@ model Policy {
   clientId       Int
   client         Client   @relation(fields: [clientId], references: [id])
   claims         Claim[]
-}
-
-model Document {
-  id        Int      @id @default(autoincrement())
-  nome      String
-  categoria String   
-  url       String   
-  tipo      String   
-  path      String?  
-  clientId  Int
-  client    Client   @relation(fields: [clientId], references: [id])
-  claimId   Int?
-  claim     Claim?   @relation(fields: [claimId], references: [id])
-  criadoEm  DateTime @default(now())
 }
 
 model Claim {
@@ -201,4 +160,32 @@ model Claim {
   policy         Policy?  @relation(fields: [policyId], references: [id])
   documentos     Document[]
   atualizadoEm   DateTime @updatedAt
+}
+
+model Lead {
+  id              Int      @id @default(autoincrement())
+  criadoEm        DateTime @default(now())
+  status          String   @default("NOVO")
+  nome            String
+  whatsapp        String
+  tipo_seguro     String?
+  obs_final          String?
+  capital_vida       String?
+  profissao          String?
+  motivo_vida        String?
+  preferencia_rede   String?
+  idades_saude       String?
+  plano_saude        String?
+  cobertura_roubo    String?
+  cobertura_terceiros String?
+  carro_reserva      String?
+  km_guincho         String?
+  renavan            String?
+  placa              String?
+  ano_do_veiculo     String?
+  modelo_veiculo     String?
+  uso_veiculo        String?
+  idade_do_condutor  String?
+  condutor_principal String?
+  dados_extras    Json?
 }
