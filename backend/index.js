@@ -1,4 +1,3 @@
-// ARQUIVO: backend/index.js
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -34,8 +33,6 @@ const uploadToDrive = async (fileObject, folderId, credentials) => {
 app.post('/leads', async (req, res) => {
   try {
     const dados = req.body;
-    console.log("Novo Lead:", dados.nome);
-
     let whatsLimpo = "00000000000";
     if (dados.whatsapp || dados.telefone) {
         whatsLimpo = (dados.whatsapp || dados.telefone).toString().replace(/\D/g, '');
@@ -68,7 +65,6 @@ app.get('/clients', async (req, res) => {
     const clients = await prisma.client.findMany({ orderBy: { nome: 'asc' } });
     res.json(clients);
 });
-
 app.post('/clients', async (req, res) => {
     try {
         const client = await prisma.client.create({ data: req.body });
@@ -76,23 +72,19 @@ app.post('/clients', async (req, res) => {
     } catch(e) { res.status(400).json({erro: "Erro ao criar cliente"}); }
 });
 
-// --- ROTA 3: APÓLICES (COM UPLOAD) ---
+// --- ROTA 3: APÓLICES ---
 app.get('/policies', async (req, res) => {
     const policies = await prisma.policy.findMany({ include: { client: true }, orderBy: { id: 'desc' } });
     res.json(policies);
 });
-
 app.post('/policies', upload.single('pdf_apolice'), async (req, res) => {
   try {
     const dados = req.body;
     const file = req.file;
-    
-    // Busca config do Drive
     const config = await prisma.systemConfig.findFirst();
     let pdfUrl = null, pdfId = null;
 
     if (file && config?.googleDriveJson) {
-      console.log("Enviando PDF para o Drive...");
       const result = await uploadToDrive(file, config.googleFolderId, config.googleDriveJson);
       pdfUrl = result.url;
       pdfId = result.id;
@@ -142,8 +134,39 @@ app.get('/dashboard-stats', async (req, res) => {
     res.json({ totalClients, activePolicies, newLeads, expiring });
 });
 
-// Rota padrão
-app.get('/', (req, res) => res.send('CRM Online - Conectado ao Neon 🚀'));
-
 const PORT = process.env.PORT || 3000;
+// Adicione no backend/index.js
+
+// Rota de Gráficos Financeiros
+app.get('/dashboard-charts', async (req, res) => {
+    try {
+        const apolices = await prisma.policy.findMany({
+            where: { status: 'ATIVA' },
+            select: { premio_liquido: true, comissao: true, tipo_seguro: true }
+        });
+
+        // Agrupar por tipo (Ex: Auto vs Vida)
+        const porTipo = { Auto: 0, Vida: 0, Residencial: 0, Outros: 0 };
+        let receitaTotal = 0;
+        let comissaoTotal = 0;
+
+        apolices.forEach(p => {
+            const tipo = p.tipo_seguro || 'Outros';
+            if (porTipo[tipo] !== undefined) porTipo[tipo]++;
+            else porTipo['Outros']++;
+            
+            receitaTotal += p.premio_liquido || 0;
+            comissaoTotal += p.comissao || 0;
+        });
+
+        res.json({ 
+            distribuicao: Object.values(porTipo),
+            labels: Object.keys(porTipo),
+            receitaTotal,
+            comissaoTotal
+        });
+    } catch (e) {
+        res.status(500).json({ erro: "Erro ao gerar gráficos" });
+    }
+});
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
