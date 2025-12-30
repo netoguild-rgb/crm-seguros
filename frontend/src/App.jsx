@@ -4,16 +4,15 @@ import axios from 'axios';
 import { 
   LayoutDashboard, Users, FileText, Settings, Plus, Search, 
   Bot, AlertTriangle, Download, X, Folder, Mail, HardDrive, Upload, 
-  AlertOctagon, Wrench, Activity, Camera, TrendingUp, Lock, LogOut, Car, CheckCircle,
-  Calendar as CalendarIcon, Clock, DollarSign, ChevronDown, UserPlus, Filter, FolderOpen,
-  LayoutKanban, List, MoreHorizontal, Phone, ArrowRight
+  AlertOctagon, Calendar as CalendarIcon, Clock, DollarSign, UserPlus, 
+  LayoutKanban, List, MoreHorizontal, Phone, ArrowRight, CheckCircle, LogOut
 } from 'lucide-react';
 import { 
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, PointElement, LineElement 
 } from 'chart.js';
-import { Doughnut, Bar, Line } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
 
-// Registro dos Gráficos (Essencial para não dar erro)
+// 1. REGISTO DOS GRÁFICOS (Essencial)
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, PointElement, LineElement);
 
 const API_URL = window.location.hostname === 'localhost' 
@@ -24,6 +23,18 @@ const api = axios.create({ baseURL: API_URL });
 // --- UTILS ---
 const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 
+// --- 2. COMPONENTE DE PROTEÇÃO (ERROR BOUNDARY) ---
+// Se o gráfico falhar, mostra um aviso em vez de travar o site (Tela Branca)
+class ChartErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError(error) { return { hasError: true }; }
+  componentDidCatch(error, errorInfo) { console.error("Erro no Gráfico:", error); }
+  render() {
+    if (this.state.hasError) return <div className="flex items-center justify-center h-full bg-slate-50 text-slate-400 text-xs rounded-lg border border-dashed border-slate-200">Gráfico indisponível</div>;
+    return this.props.children;
+  }
+}
+
 const useAuth = () => {
     const [user, setUser] = useState(() => {
         try { return JSON.parse(localStorage.getItem('crm_user')); } catch (e) { return null; }
@@ -33,7 +44,6 @@ const useAuth = () => {
     return { user, login, logout };
 };
 
-// --- COMPONENTES UI ---
 const SidebarItem = ({ to, icon: Icon, label }) => {
   const location = useLocation();
   const isActive = location.pathname === to;
@@ -69,7 +79,7 @@ const Modal = ({ title, children, onClose, maxWidth = "max-w-md" }) => (
     </div>
 );
 
-// --- DASHBOARD (COM PROTEÇÃO CONTRA TELA BRANCA) ---
+// --- DASHBOARD ---
 const Dashboard = () => { 
     const [data, setData] = useState(null); 
     const [loading, setLoading] = useState(true);
@@ -80,29 +90,16 @@ const Dashboard = () => {
             try {
                 const res = await api.get('/dashboard-stats');
                 setData(res.data);
-            } catch(e) { 
-                console.error("Erro Dashboard:", e);
-                setError(true);
-            } finally { 
-                setLoading(false); 
-            }
+            } catch(e) { setError(true); } finally { setLoading(false); }
         };
         fetchData();
     }, []); 
 
-    if(loading) return <div className="flex justify-center items-center h-full gap-2 text-slate-500"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div> Carregando dados...</div>;
+    if(loading) return <div className="flex justify-center items-center h-full gap-2 text-slate-500"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div> Carregando...</div>;
     
-    // PROTEÇÃO: Se deu erro ou dados vieram vazios, mostra aviso em vez de travar
-    if(error || !data) return (
-        <div className="flex flex-col items-center justify-center h-full text-slate-400">
-            <AlertTriangle size={48} className="mb-4 text-orange-400 opacity-50"/>
-            <h3 className="text-xl font-bold text-slate-600">Ops! Não foi possível carregar o painel.</h3>
-            <p className="text-sm mt-2">Verifique se o Backend está rodando e se o banco de dados está atualizado.</p>
-            <button onClick={() => window.location.reload()} className="mt-4 text-blue-600 font-bold hover:underline">Tentar Novamente</button>
-        </div>
-    );
+    // Tratamento de Erro de Conexão
+    if(error || !data) return <div className="flex flex-col items-center justify-center h-full text-slate-400"><AlertTriangle size={48} className="mb-2 opacity-50"/><p>Erro de conexão. Verifique se o Backend está ligado.</p></div>;
 
-    // Preparação Segura dos Gráficos (Evita erro se arrays forem null)
     const leadsByStatus = data.charts?.leadsByStatus || [];
     const funnelData = {
         labels: leadsByStatus.map(s => s.status),
@@ -111,32 +108,34 @@ const Dashboard = () => {
 
     const financialHistory = data.charts?.financialHistory || [];
     const revenueData = {
-        labels: financialHistory.length ? financialHistory.map(h => new Date(h.dueDate).toLocaleDateString('pt-BR',{month:'short'})) : ['Jan','Fev','Mar'],
-        datasets: [{ label: 'Receita', data: financialHistory.length ? financialHistory.map(h => h.amount) : [0,0,0], borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.1)', fill: true, tension: 0.4 }]
+        labels: financialHistory.length ? financialHistory.map(h => new Date(h.dueDate).toLocaleDateString('pt-BR',{month:'short'})) : ['Jan','Fev'],
+        datasets: [{ label: 'Receita', data: financialHistory.length ? financialHistory.map(h => h.amount) : [0,0], borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.1)', fill: true, tension: 0.4 }]
     };
 
     return (
         <div className="space-y-6 animate-fade-in pb-10">
-            <div className="flex justify-between items-end"><div><h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2><p className="text-sm text-slate-500">Painel de controle.</p></div><div className="text-sm text-slate-400 font-medium bg-white px-3 py-1 rounded-lg border border-slate-200 hidden md:block">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div></div>
-            
+            <div className="flex justify-between items-end"><div><h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2><p className="text-sm text-slate-500">Painel de controle.</p></div></div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-                {[{t:'Clientes', v: data.kpi?.totalClients || 0, i:Users, c:'text-blue-600', bg:'bg-blue-50'},{t:'Apólices', v: data.kpi?.activePolicies || 0, i:FileText, c:'text-emerald-600', bg:'bg-emerald-50'},{t:'Leads', v: data.kpi?.newLeads || 0, i:Bot, c:'text-purple-600', bg:'bg-purple-50'},{t:'Receita Mês', v: formatCurrency(data.kpi?.monthlyRevenue), i:DollarSign, c:'text-orange-600', bg:'bg-orange-50'}].map((x,i)=>(<div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all"><div><p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{x.t}</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{x.v}</h3></div><div className={`p-3 rounded-xl ${x.bg} ${x.c}`}><x.i size={24}/></div></div>))} 
+                {[{t:'Clientes',v:data.kpi?.totalClients,i:Users,c:'text-blue-600',bg:'bg-blue-50'},{t:'Apólices',v:data.kpi?.activePolicies,i:FileText,c:'text-emerald-600',bg:'bg-emerald-50'},{t:'Leads',v:data.kpi?.newLeads,i:Bot,c:'text-purple-600',bg:'bg-purple-50'},{t:'Receita',v:formatCurrency(data.kpi?.monthlyRevenue),i:DollarSign,c:'text-orange-600',bg:'bg-orange-50'}].map((x,i)=>(<div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all"><div><p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{x.t}</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{x.v}</h3></div><div className={`p-3 rounded-xl ${x.bg} ${x.c}`}><x.i size={24}/></div></div>))} 
             </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-6">Desempenho Financeiro</h3><div className="h-64 w-full"><Line data={revenueData} options={{maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{grid:{borderDash:[4,4]}},x:{grid:{display:false}}}}}/></div></div>
-                <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-6">Funil de Leads</h3><div className="h-64 w-full"><Bar data={funnelData} options={{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}}}/></div></div>
+                <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-6">Desempenho Financeiro</h3><div className="h-64 w-full">
+                    {/* 3. USO DO ERROR BOUNDARY NOS GRÁFICOS */}
+                    <ChartErrorBoundary><Line data={revenueData} options={{maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{grid:{borderDash:[4,4]}},x:{grid:{display:false}}}}} /></ChartErrorBoundary>
+                </div></div>
+                <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-6">Funil de Leads</h3><div className="h-64 w-full">
+                    <ChartErrorBoundary><Bar data={funnelData} options={{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}}} /></ChartErrorBoundary>
+                </div></div>
             </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><CalendarIcon size={18} className="text-orange-500"/> Agenda Próxima</h3><div className="space-y-3">{data.lists?.upcomingAgenda?.map(a=>(<div key={a.id} className="flex gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-orange-50 transition-colors"><div className="w-1 bg-orange-500 rounded-full"></div><div><h4 className="text-sm font-bold">{a.title}</h4><p className="text-xs text-slate-500">{new Date(a.date).toLocaleString('pt-BR')} • {a.client?.nome || 'Sem cliente'}</p></div></div>))}</div>{(!data.lists?.upcomingAgenda || data.lists.upcomingAgenda.length === 0) && <p className="text-center text-sm text-slate-400 py-4">Sem compromissos.</p>}</div>
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><Bot size={18} className="text-blue-500"/> Leads Recentes</h3><div className="space-y-0">{data.lists?.recentLeads?.map((l,i)=>(<div key={l.id} className={`flex justify-between items-center p-3 ${i!==4?'border-b border-slate-50':''}`}><div><h4 className="text-sm font-bold">{l.nome}</h4><p className="text-xs text-slate-400">{l.tipo_seguro}</p></div><StatusBadge status={l.status}/></div>))}</div>{(!data.lists?.recentLeads || data.lists.recentLeads.length === 0) && <p className="text-center text-sm text-slate-400 py-4">Nenhum lead novo.</p>}</div>
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><CalendarIcon size={18} className="text-orange-500"/> Agenda Próxima</h3><div className="space-y-3">{data.lists?.upcomingAgenda?.map(a=>(<div key={a.id} className="flex gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-orange-50 transition-colors"><div className="w-1 bg-orange-500 rounded-full"></div><div><h4 className="text-sm font-bold">{a.title}</h4><p className="text-xs text-slate-500">{new Date(a.date).toLocaleString('pt-BR')} • {a.client?.nome}</p></div></div>))}</div></div>
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><Bot size={18} className="text-blue-500"/> Leads Recentes</h3><div className="space-y-0">{data.lists?.recentLeads?.map((l,i)=>(<div key={l.id} className={`flex justify-between items-center p-3 ${i!==4?'border-b border-slate-50':''}`}><div><h4 className="text-sm font-bold">{l.nome}</h4><p className="text-xs text-slate-400">{l.tipo_seguro}</p></div><StatusBadge status={l.status}/></div>))}</div></div>
             </div>
         </div> 
     );
 };
 
-// --- MÓDULO LEADS (KANBAN & TABLE) ---
+// --- LEADS ---
 const Leads = () => {
     const [leads, setLeads] = useState([]);
     const [viewMode, setViewMode] = useState('KANBAN'); 
@@ -170,87 +169,25 @@ const Leads = () => {
 
     const confirmConversion = async (e) => {
         e.preventDefault(); await api.post('/clients', clientForm); await api.put(`/leads/${selectedLead.id}`, { status: 'VENDA' });
-        alert("Lead promovido a Cliente!"); setIsConvertModalOpen(false); setSelectedLead(null); loadLeads();
+        alert("Lead promovido!"); setIsConvertModalOpen(false); setSelectedLead(null); loadLeads();
     };
 
     const filteredLeads = leads.filter(l => l.nome.toLowerCase().includes(search.toLowerCase()) || l.whatsapp.includes(search));
-    const stages = [
-        { id: 'NOVO', label: 'Novos', color: 'border-blue-500' }, { id: 'CONTATADO', label: 'Contatados', color: 'border-yellow-500' },
-        { id: 'COTACAO', label: 'Em Cotação', color: 'border-purple-500' }, { id: 'VENDA', label: 'Fechados', color: 'border-emerald-500' },
-        { id: 'PERDIDO', label: 'Perdidos', color: 'border-gray-300' }
-    ];
+    const stages = [{ id: 'NOVO', label: 'Novos', color: 'border-blue-500' }, { id: 'CONTATADO', label: 'Contatados', color: 'border-yellow-500' }, { id: 'COTACAO', label: 'Em Cotação', color: 'border-purple-500' }, { id: 'VENDA', label: 'Fechados', color: 'border-emerald-500' }, { id: 'PERDIDO', label: 'Perdidos', color: 'border-gray-300' }];
 
     return (
         <div className="space-y-6 animate-fade-in h-[calc(100vh-140px)] flex flex-col">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm shrink-0">
                 <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Bot className="text-orange-500"/> Pipeline de Leads</h2>
                 <div className="flex gap-2 w-full md:w-auto">
-                    <div className="bg-slate-100 p-1 rounded-lg flex items-center mr-2">
-                        <button onClick={()=>setViewMode('TABLE')} className={`p-2 rounded-md transition-all ${viewMode==='TABLE'?'bg-white shadow-sm text-orange-500':'text-slate-400'}`}><List size={20}/></button>
-                        <button onClick={()=>setViewMode('KANBAN')} className={`p-2 rounded-md transition-all ${viewMode==='KANBAN'?'bg-white shadow-sm text-orange-500':'text-slate-400'}`}><LayoutKanban size={20}/></button>
-                    </div>
+                    <div className="bg-slate-100 p-1 rounded-lg flex items-center mr-2"><button onClick={()=>setViewMode('TABLE')} className={`p-2 rounded-md transition-all ${viewMode==='TABLE'?'bg-white shadow-sm text-orange-500':'text-slate-400'}`}><List size={20}/></button><button onClick={()=>setViewMode('KANBAN')} className={`p-2 rounded-md transition-all ${viewMode==='KANBAN'?'bg-white shadow-sm text-orange-500':'text-slate-400'}`}><LayoutKanban size={20}/></button></div>
                     <div className="relative w-64"><Search className="absolute left-3 top-2.5 text-slate-400" size={18}/><input className="pl-10 input-field" placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
                 </div>
             </div>
-
-            {viewMode === 'TABLE' && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex-1 overflow-y-auto">
-                    <table className="w-full text-left"><thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider border-b sticky top-0 bg-slate-50 z-10"><tr><th className="p-5">Nome</th><th className="p-5">Contato</th><th className="p-5">Status</th><th className="p-5 text-center">Ações</th></tr></thead><tbody className="divide-y divide-slate-50">{filteredLeads.map(l => (<tr key={l.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedLead(l)}><td className="p-5 font-bold text-slate-700">{l.nome}</td><td className="p-5 text-sm">{l.whatsapp}</td><td className="p-5"><StatusBadge status={l.status}/></td><td className="p-5 text-center"><button className="text-blue-600 font-bold text-xs">Detalhes</button></td></tr>))}</tbody></table>
-                </div>
-            )}
-
-            {viewMode === 'KANBAN' && (
-                <div className="flex gap-4 overflow-x-auto h-full pb-4 items-start">
-                    {stages.map(stage => {
-                        const stageLeads = filteredLeads.filter(l => l.status === stage.id || (stage.id === 'COTACAO' && l.status === 'COTACAO'));
-                        return (
-                            <div key={stage.id} className="min-w-[300px] w-[300px] flex flex-col h-full rounded-2xl bg-slate-100/50 border border-slate-200/60">
-                                <div className={`p-4 border-b border-slate-200 bg-white rounded-t-2xl flex justify-between items-center border-t-4 ${stage.color}`}><h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide">{stage.label}</h3><span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-xs font-bold">{stageLeads.length}</span></div>
-                                <div className="p-3 flex-1 overflow-y-auto space-y-3">
-                                    {stageLeads.map(lead => (
-                                        <div key={lead.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group relative" onClick={() => setSelectedLead(lead)}>
-                                            <div className="flex justify-between items-start mb-2"><span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-100">{lead.tipo_seguro || 'Geral'}</span><small className="text-[10px] text-slate-400">{new Date(lead.criadoEm).toLocaleDateString()}</small></div>
-                                            <h4 className="font-bold text-slate-800 text-sm mb-1 line-clamp-1">{lead.nome}</h4>
-                                            <div className="flex items-center gap-1 text-xs text-slate-500 mb-3"><Phone size={12}/> {lead.whatsapp}</div>
-                                            <div className="pt-3 border-t border-slate-50 flex justify-between items-center opacity-60 group-hover:opacity-100 transition-opacity">
-                                                {stage.id === 'NOVO' && <button onClick={(e)=>{e.stopPropagation(); updateStatus(lead.id, 'CONTATADO')}} className="text-[10px] font-bold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded flex items-center gap-1">Contatar <ArrowRight size={10}/></button>}
-                                                {stage.id === 'CONTATADO' && <button onClick={(e)=>{e.stopPropagation(); updateStatus(lead.id, 'COTACAO')}} className="text-[10px] font-bold text-purple-600 hover:bg-purple-50 px-2 py-1 rounded flex items-center gap-1">Cotar <ArrowRight size={10}/></button>}
-                                                {stage.id === 'COTACAO' && <button onClick={(e)=>{e.stopPropagation(); handleConvert(lead)}} className="text-[10px] font-bold text-emerald-600 hover:bg-emerald-50 px-2 py-1 rounded flex items-center gap-1">Vender <ArrowRight size={10}/></button>}
-                                                <button onClick={(e)=>{e.stopPropagation(); setSelectedLead(lead)}} className="text-slate-400 hover:text-slate-600"><MoreHorizontal size={16}/></button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-
-            {selectedLead && !isConvertModalOpen && (
-                <Modal title={`Lead: ${selectedLead.nome}`} onClose={()=>setSelectedLead(null)} maxWidth="max-w-2xl">
-                    <div className="grid grid-cols-2 gap-4 text-sm mb-6">
-                        <div className="col-span-2 bg-orange-50 border border-orange-100 p-4 rounded-xl text-orange-900"><strong>Resumo:</strong> {selectedLead.obs_final || 'Sem observações.'}</div>
-                        <div><span className="text-slate-400 text-xs font-bold uppercase block mb-1">Contato</span><p className="font-medium">{selectedLead.whatsapp}</p></div>
-                        <div><span className="text-slate-400 text-xs font-bold uppercase block mb-1">Interesse</span><p className="font-medium">{selectedLead.tipo_seguro}</p></div>
-                        {selectedLead.modelo_veiculo && <div className="col-span-2 pt-4 border-t border-slate-100 mt-2"><span className="text-slate-400 text-xs font-bold uppercase block mb-2">Veículo</span><p>{selectedLead.modelo_veiculo} - {selectedLead.placa}</p></div>}
-                    </div>
-                    <div className="flex gap-3 pt-4 border-t border-slate-100">
-                        <button onClick={()=>handleConvert(selectedLead)} className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 flex justify-center gap-2 shadow-lg shadow-emerald-600/20"><UserPlus size={18}/> Converter em Cliente</button>
-                        <select className="input-field w-auto font-bold text-slate-600 h-full" value={selectedLead.status} onChange={(e)=>updateStatus(selectedLead.id, e.target.value)}><option value="NOVO">Novo</option><option value="CONTATADO">Contatado</option><option value="COTACAO">Cotação</option><option value="PERDIDO">Perdido</option><option value="VENDA">Venda</option></select>
-                    </div>
-                </Modal>
-            )}
-            {isConvertModalOpen && (
-                <Modal title="Converter Lead" onClose={()=>setIsConvertModalOpen(false)} maxWidth="max-w-2xl">
-                    <form onSubmit={confirmConversion} className="space-y-4">
-                        <div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm mb-4 border border-blue-100 flex gap-3"><CheckCircle className="shrink-0"/><p>Dados do Typebot pré-preenchidos. Confirme para criar o cliente.</p></div>
-                        <input className="input-field" placeholder="Nome" value={clientForm.nome} onChange={e=>setClientForm({...clientForm, nome:e.target.value})} required/>
-                        <div className="grid grid-cols-2 gap-3"><input className="input-field" placeholder="Email" value={clientForm.email} onChange={e=>setClientForm({...clientForm, email:e.target.value})}/><input className="input-field" placeholder="WhatsApp" value={clientForm.whatsapp} onChange={e=>setClientForm({...clientForm, whatsapp:e.target.value})}/></div>
-                        <button className="btn-primary w-full mt-4 py-3">Confirmar Cadastro</button>
-                    </form>
-                </Modal>
-            )}
+            {viewMode === 'TABLE' && (<div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex-1 overflow-y-auto"><table className="w-full text-left"><thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider border-b sticky top-0 bg-slate-50 z-10"><tr><th className="p-5">Nome</th><th className="p-5">Contato</th><th className="p-5">Status</th><th className="p-5 text-center">Ações</th></tr></thead><tbody className="divide-y divide-slate-50">{filteredLeads.map(l => (<tr key={l.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedLead(l)}><td className="p-5 font-bold text-slate-700">{l.nome}</td><td className="p-5 text-sm">{l.whatsapp}</td><td className="p-5"><StatusBadge status={l.status}/></td><td className="p-5 text-center"><button className="text-blue-600 font-bold text-xs">Detalhes</button></td></tr>))}</tbody></table></div>)}
+            {viewMode === 'KANBAN' && (<div className="flex gap-4 overflow-x-auto h-full pb-4 items-start">{stages.map(stage => { const stageLeads = filteredLeads.filter(l => l.status === stage.id || (stage.id === 'COTACAO' && l.status === 'COTACAO')); return ( <div key={stage.id} className="min-w-[300px] w-[300px] flex flex-col h-full rounded-2xl bg-slate-100/50 border border-slate-200/60"><div className={`p-4 border-b border-slate-200 bg-white rounded-t-2xl flex justify-between items-center border-t-4 ${stage.color}`}><h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide">{stage.label}</h3><span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-xs font-bold">{stageLeads.length}</span></div><div className="p-3 flex-1 overflow-y-auto space-y-3">{stageLeads.map(lead => (<div key={lead.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group relative" onClick={() => setSelectedLead(lead)}><div className="flex justify-between items-start mb-2"><span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-100">{lead.tipo_seguro || 'Geral'}</span><small className="text-[10px] text-slate-400">{new Date(lead.criadoEm).toLocaleDateString()}</small></div><h4 className="font-bold text-slate-800 text-sm mb-1 line-clamp-1">{lead.nome}</h4><div className="flex items-center gap-1 text-xs text-slate-500 mb-3"><Phone size={12}/> {lead.whatsapp}</div><div className="pt-3 border-t border-slate-50 flex justify-between items-center opacity-60 group-hover:opacity-100 transition-opacity">{stage.id === 'NOVO' && <button onClick={(e)=>{e.stopPropagation(); updateStatus(lead.id, 'CONTATADO')}} className="text-[10px] font-bold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded flex items-center gap-1">Contatar <ArrowRight size={10}/></button>}{stage.id === 'CONTATADO' && <button onClick={(e)=>{e.stopPropagation(); updateStatus(lead.id, 'COTACAO')}} className="text-[10px] font-bold text-purple-600 hover:bg-purple-50 px-2 py-1 rounded flex items-center gap-1">Cotar <ArrowRight size={10}/></button>}{stage.id === 'COTACAO' && <button onClick={(e)=>{e.stopPropagation(); handleConvert(lead)}} className="text-[10px] font-bold text-emerald-600 hover:bg-emerald-50 px-2 py-1 rounded flex items-center gap-1">Vender <ArrowRight size={10}/></button>}<button onClick={(e)=>{e.stopPropagation(); setSelectedLead(lead)}} className="text-slate-400 hover:text-slate-600"><MoreHorizontal size={16}/></button></div></div>))}</div></div> )})}</div>)}
+            {selectedLead && !isConvertModalOpen && (<Modal title={`Lead: ${selectedLead.nome}`} onClose={()=>setSelectedLead(null)} maxWidth="max-w-2xl"><div className="grid grid-cols-2 gap-4 text-sm mb-6"><div className="col-span-2 bg-orange-50 border border-orange-100 p-4 rounded-xl text-orange-900"><strong>Resumo:</strong> {selectedLead.obs_final || 'Sem observações.'}</div><div><span className="text-slate-400 text-xs font-bold uppercase block mb-1">Contato</span><p className="font-medium">{selectedLead.whatsapp}</p></div><div><span className="text-slate-400 text-xs font-bold uppercase block mb-1">Interesse</span><p className="font-medium">{selectedLead.tipo_seguro}</p></div>{selectedLead.modelo_veiculo && <div className="col-span-2 pt-4 border-t border-slate-100 mt-2"><span className="text-slate-400 text-xs font-bold uppercase block mb-2">Veículo</span><p>{selectedLead.modelo_veiculo} - {selectedLead.placa}</p></div>}</div><div className="flex gap-3 pt-4 border-t border-slate-100"><button onClick={()=>handleConvert(selectedLead)} className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 flex justify-center gap-2 shadow-lg shadow-emerald-600/20"><UserPlus size={18}/> Converter em Cliente</button><select className="input-field w-auto font-bold text-slate-600 h-full" value={selectedLead.status} onChange={(e)=>updateStatus(selectedLead.id, e.target.value)}><option value="NOVO">Novo</option><option value="CONTATADO">Contatado</option><option value="COTACAO">Cotação</option><option value="PERDIDO">Perdido</option><option value="VENDA">Venda</option></select></div></Modal>)}
+            {isConvertModalOpen && (<Modal title="Converter Lead" onClose={()=>setIsConvertModalOpen(false)} maxWidth="max-w-2xl"><form onSubmit={confirmConversion} className="space-y-4"><div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm mb-4 border border-blue-100 flex gap-3"><CheckCircle className="shrink-0"/><p>Dados do Typebot pré-preenchidos. Confirme para criar o cliente.</p></div><input className="input-field" placeholder="Nome" value={clientForm.nome} onChange={e=>setClientForm({...clientForm, nome:e.target.value})} required/><div className="grid grid-cols-2 gap-3"><input className="input-field" placeholder="Email" value={clientForm.email} onChange={e=>setClientForm({...clientForm, email:e.target.value})}/><input className="input-field" placeholder="WhatsApp" value={clientForm.whatsapp} onChange={e=>setClientForm({...clientForm, whatsapp:e.target.value})}/></div><button className="btn-primary w-full mt-4 py-3">Confirmar Cadastro</button></form></Modal>)}
         </div>
     );
 };
